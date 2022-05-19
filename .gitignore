@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+docs
+test
+tradetime.ipynb
+.idea
+TradeTime Doc.lnk
