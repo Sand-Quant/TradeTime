@@ -1,3 +1,4 @@
 sandinvest
 pandas
 myst-parser
+pydata_sphinx_theme
