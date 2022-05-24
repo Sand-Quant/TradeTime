@@ -1,4 +1,7 @@
-# <img src="http://www.sandquant.com/icon/sandquant_icon_pure.png" width="50px" height="50px" /> TradeTime
+# TradeTime
+
+**Powered By** [<img src="http://www.sandquant.com/icon/sandquant_icon_pure.png" width="35px" height="35px" />](http://doc.sandquant.com) 
+
 
 ![](https://img.shields.io/badge/Version-1.0-red)  ![](https://img.shields.io/badge/python-3.5,3.6,3.7,3.8,3.9-blue)
 
