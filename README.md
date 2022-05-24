@@ -2,6 +2,11 @@
 
 **Powered By** [<img src="http://www.sandquant.com/icon/sandquant_icon_pure.png" width="40px" height="40px" />](http://doc.sandquant.com) 
 
+<div>
+    <strong>Powered By</strong>
+    <img src="http://www.sandquant.com/icon/sandquant_icon_pure.png" href='http://baidu.com' width="40px" height="40px" />
+</div>
+
 ![](https://img.shields.io/badge/Version-1.0-red)  ![](https://img.shields.io/badge/python-3.5,3.6,3.7,3.8,3.9-blue)
 
 ![](https://img.shields.io/badge/pandas-0b3558)  ![](https://img.shields.io/badge/sandinvest-0b3558)  
