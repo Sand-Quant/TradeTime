@@ -1,2 +1,3 @@
 sandinvest
 pandas
+myst-parser
