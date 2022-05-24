@@ -26,6 +26,8 @@ setup(
     long_description_content_type='text/markdown',
     author=info['__author__'],
     author_email=info['__email__'],
+    url='https://github.com/Sand-Quant/TradeTime',
+    download_url='https://pypi.org/project/TradeTime/',
     packages=packages,
     install_requires=requires,
     include_package_data=True,
