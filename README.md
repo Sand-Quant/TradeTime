@@ -1,6 +1,6 @@
 # TradeTime
 
-![](https://img.shields.io/badge/Version-1.0-red)  ![](https://img.shields.io/badge/python-3.5, 3.6, 3.7, 3.8, 3.9-blue)
+![](https://img.shields.io/badge/Version-1.0-red)  ![](https://img.shields.io/badge/python-3.5,3.6,3.7,3.8,3.9-blue)
 
 ![](https://img.shields.io/badge/pandas-0b3558)  ![](https://img.shields.io/badge/sandinvest-0b3558)
 
