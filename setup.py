@@ -9,7 +9,7 @@ from setuptools import setup
 here = os.path.abspath(os.path.dirname(__file__))
 
 packages = ['tradetime']
-requires = ['sandinvest']
+requires = ['pandas', 'sandinvest']
 
 info = {}
 with open(os.path.join(here, 'tradetime', '__version__.py'), 'r', encoding='utf-8') as _version:
