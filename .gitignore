@@ -128,8 +128,12 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-docs
+
 test
 tradetime.ipynb
 .idea
 TradeTime Doc.lnk
+docs/build
+docs/make.bat
+docs/Makefile
+docs/run.bat
