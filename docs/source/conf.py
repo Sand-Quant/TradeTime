@@ -16,13 +16,14 @@
 
 
 # -- Project information -----------------------------------------------------
+import datetime
 
 project = 'TradeTime'
-copyright = '2022, WJA'
-author = 'WJA'
+copyright = f'2021-{datetime.date.today().year} © SandQuant'
+author = 'SandQuant'
 
 # The full version, including alpha/beta/rc tags
-release = 'v0.1.0'
+release = '1.0'
 
 
 # -- General configuration ---------------------------------------------------
