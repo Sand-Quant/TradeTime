@@ -87,7 +87,7 @@ Name: date, dtype: object
 
 <br>
 
-### date.calendar
+### date.calendar_open/date.calendar_close/date.calendar
 
 获取交易日历**字典**，同样用于提取交易日历
 
@@ -101,6 +101,14 @@ dict_keys(['D', 'W', 'M', 'Q', 'Y'])
 2    2005-01-06
 3    2005-01-07
 4    2005-01-10
+Name: time, dtype: object
+
+>>> tradetime.date.calendar_open['Y'].head()
+0    2005-01-04
+1    2006-01-04
+2    2007-01-04
+3    2008-01-02
+4    2009-01-05
 Name: time, dtype: object
 ```
 
