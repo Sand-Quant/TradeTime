@@ -29,6 +29,7 @@ setup(
     url='https://github.com/Sand-Quant/TradeTime',
     download_url='https://pypi.org/project/TradeTime/',
     packages=packages,
+    package_data={'': ['*.csv']},
     install_requires=requires,
     include_package_data=True,
     python_requires='>=3.5',
