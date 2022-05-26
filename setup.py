@@ -31,7 +31,7 @@ setup(
     packages=packages,
     package_data={'': ['*.csv']},
     install_requires=requires,
-    include_package_data=True,
+    # include_package_data=True,
     python_requires='>=3.5',
     classifiers=[
         'Intended Audience :: Developers',
