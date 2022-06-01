@@ -319,7 +319,7 @@ class date:
 
     @property
     def quarter(self):
-        return int((self.month -0.5) // 3 + 1)
+        return int((self.month - 0.5) // 3 + 1)
 
     @property
     def month(self):
