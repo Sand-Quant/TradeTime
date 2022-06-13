@@ -25,6 +25,7 @@ except ModuleNotFoundError:
 
 # python datetime type
 _datetime_type = (_datetime.datetime, _datetime.date, _datetime.time)
+_anydatetime_type = (str, int, _datetime.datetime, _datetime.date, _datetime.time)
 _Datetime_Type = TypeVar('_Datetime_Type', _datetime.datetime, _datetime.date, _datetime.time)
 _AnyDatetime_Type = TypeVar('_AnyDatetime_Type', str, int, _datetime.datetime, _datetime.date, _datetime.time)
 
@@ -38,7 +39,8 @@ py_timedelta = _datetime.timedelta
 _freq_date_type = ['D', 'W', 'M', 'Q', 'Y']
 _freq_hour_type = ['H']
 _freq_minute_type = ['min', 'T']
-_freq_time_type = _freq_minute_type + _freq_hour_type
+_freq_second_type = ['s']
+_freq_time_type = _freq_minute_type + _freq_hour_type + _freq_second_type
 
 
 def _check_time_bars(bars: int):
@@ -50,9 +52,11 @@ def _check_time_freq(freq: str):
     type_ = re.sub(u"([^\u0041-\u007a])", "", freq)
     assert type_ in _freq_time_type, f"{type_} is not in {_freq_time_type}"
     if type_ in _freq_minute_type:
-        assert 120 % n == 0, "freq min should be divisible by 120, like 1,2,3,4,5,6,10,...,120"
+        assert 120 % n == 0, "freq minute should be divisible by 120, like 1,2,3,4,5,6,10,...,120"
     if type_ in _freq_hour_type:
-        assert n in [1, 2], "freq H should be 1 or 2"
+        assert n in [1, 2], "freq hour should be 1 or 2"
+    if type_ in _freq_second_type:
+        assert 60 % n == 0, "freq second should be divisible by 120, like 1,2,3,4,5,6,10,...,60"
 
 
 def _cmp(x, y):
@@ -133,6 +137,18 @@ def _convert2time(x=None, freq=None) -> 'time':
     return x
 
 
+class _Time(_datetime.time):
+    """自定义datetime.time类，增加加减功能"""
+
+    def __add__(self, other: _datetime.timedelta):
+        assert isinstance(other, _datetime.timedelta)
+        return (_datetime.datetime.combine(_datetime.date.today(), self) + other).time()
+
+    def __sub__(self, other: _datetime.timedelta):
+        assert isinstance(other, _datetime.timedelta)
+        return (_datetime.datetime.combine(_datetime.date.today(), self) - other).time()
+
+
 class Calendar:
 
     def __init__(self, freq):
@@ -142,22 +158,150 @@ class Calendar:
         calendar = pd.to_datetime(calendar)
         calendar.index = pd.to_datetime(calendar)
 
-        _start = calendar.resample(self._freq).first().dropna().reset_index(drop=True)
-        _end = calendar.resample(self._freq).last().dropna().reset_index(drop=True)
-        self._start = _start.apply(lambda x: date(x.year, x.month, x.day, freq=freq, ignore=True))
-        self._end = _end.apply(lambda x: date(x.year, x.month, x.day, freq=freq, ignore=True))
+        _open = calendar.resample(self._freq).first().dropna().reset_index(drop=True)
+        _close = calendar.resample(self._freq).last().dropna().reset_index(drop=True)
+        self._open = _open.apply(lambda x: date(x.year, x.month, x.day, freq=freq, ignore=True))
+        self._close = _close.apply(lambda x: date(x.year, x.month, x.day, freq=freq, ignore=True))
 
     @property
     def open(self) -> pd.Series:
-        return self._start
+        return self._open
 
     @property
     def close(self) -> pd.Series:
-        return self._end
+        return self._close
 
     @property
     def range(self) -> Tuple[pd.Series, pd.Series]:
-        return self._start, self._end
+        return self._open, self._close
+
+
+class Session:
+
+    # 早盘开始和结束时间
+    morning_open_time = _Time(hour=9, minute=30)
+    morning_close_time = _Time(hour=11, minute=30)
+    # 午盘开始和结束时间
+    afternoon_open_time = _Time(hour=13, minute=0)
+    afternoon_close_time = _Time(hour=15, minute=0)
+    # 是否包含开盘集合竞价
+    include = True
+
+    def __init__(self, freq):
+        self._freq = freq
+        _check_time_freq(self._freq)
+
+        if freq == '1min':
+            if self.include:
+                morning_session = self.time_range(
+                    start=self.morning_open_time,
+                    end=self.morning_close_time,
+                    freq=freq
+                )
+            else:  # bars == 240
+                morning_session = self.time_range(
+                    start=self.morning_open_time + _datetime.timedelta(minutes=1),
+                    end=self.morning_close_time,
+                    freq=freq
+                )
+            afternoon_session = self.time_range(
+                start=self.afternoon_open_time + _datetime.timedelta(minutes=1),
+                end=self.afternoon_close_time,
+                freq=freq
+            )
+        elif freq == '1s':
+            if self.include:
+                morning_session = self.time_range(
+                    start=self.morning_open_time,
+                    end=self.morning_close_time,
+                    freq=freq
+                )
+            else:
+                self.morning_open_time + _datetime.timedelta(seconds=1)
+                morning_session = self.time_range(
+                    start=self.morning_open_time + _datetime.timedelta(seconds=1),
+                    end=self.morning_close_time,
+                    freq=freq
+                )
+            afternoon_session = self.time_range(
+                start=self.afternoon_open_time + _datetime.timedelta(seconds=1),
+                end=self.afternoon_close_time,
+                freq=freq
+            )
+        else:  # other freq type
+            morning_session = self.time_range(
+                start=self.morning_open_time,
+                end=self.morning_close_time,
+                freq=freq
+            )
+            afternoon_session = self.time_range(
+                start=self.afternoon_open_time,
+                end=self.afternoon_close_time,
+                freq=freq
+            )
+
+        # 计算Open Bar
+        freq_n = int(re.sub(u"([^\u0030-\u0039])", "", freq))
+        freq_type = re.sub(u"([^\u0041-\u007a])", "", freq)
+        if freq_type == 'min':
+            delta = (freq_n - 1) * 60 + 59
+        elif freq_type == 'H':
+            delta = (freq_n * 60 - 1) * 60 + 59
+        else:
+            raise ValueError
+
+        morning_session_open = pd.Series(morning_session).apply(lambda x: x - _datetime.timedelta(seconds=delta))
+        afternoon_session_open = pd.Series(afternoon_session).apply(lambda x: x - _datetime.timedelta(seconds=delta))
+        morning_session_open.loc[0] = self.morning_open_time
+        afternoon_session_open.loc[0] = self.afternoon_open_time
+
+        self._open = pd.Series(list(morning_session_open) + list(afternoon_session_open), name='time')
+        self._close = pd.Series(morning_session + afternoon_session, name='time')
+
+        # self._open = self._open.apply(
+        #     lambda x: "%s:%s:%s" % (str(x.hour).zfill(2), str(x.minute).zfill(2), str(x.second).zfill(2))
+        # )
+        # self._close = self._close.apply(
+        #     lambda x: "%s:%s:%s" % (str(x.hour).zfill(2), str(x.minute).zfill(2), str(x.second).zfill(2))
+        # )
+        self._open = self._open.apply(
+            lambda x: time(hour=x.hour, minute=x.minute, second=x.second, freq=self._freq, ignore=True)
+        )
+        self._close = self._close.apply(
+            lambda x: time(hour=x.hour, minute=x.minute, second=x.second, freq=self._freq, ignore=True)
+        )
+
+    @staticmethod
+    def time_range(start, end, freq='1min'):
+        start = _datetime.datetime.combine(
+            _datetime.date.today(),
+            _datetime.time(hour=start.hour, minute=start.minute, second=start.second)
+        )
+        end = _datetime.datetime.combine(
+            _datetime.date.today(),
+            _datetime.time(hour=end.hour, minute=end.minute, second=end.second)
+        )
+
+        time_ranges = [
+            _Time(i.time().hour, i.time().minute, i.time().second)
+            for i in pd.date_range(start, end, freq=freq)
+        ]
+
+        if freq not in ('1min', '1s'):
+            time_ranges = time_ranges[1:]
+        return time_ranges
+
+    @property
+    def open(self) -> pd.Series:
+        return self._open
+
+    @property
+    def close(self) -> pd.Series:
+        return self._close
+
+    @property
+    def range(self) -> Tuple[pd.Series, pd.Series]:
+        return self._open, self._close
 
 
 class bardelta:
@@ -634,31 +778,26 @@ class time:
     """
     ignore: 可以生成和频率不匹配的time实例
     """
+    # Default Bar Type
+    default_freq: str = None  # 5min
+    default_freqN: int = None  # 5
+    default_freqType: str = None  # min
 
-    # Public Attribute
-    # Market Time Endpoint
+    # Session To visit
+    # _1s: Session = None
+    _3s: Session = None
+    _1m: Session = None
+    _5m: Session = None
+    _15m: Session = None
+    _30m: Session = None
+    _1h: Session = None
+    # All Session Dict
+    session_open: Dict = None
+    session_close: Dict = None
+    session: Dict = None
 
-    # before_market = None
-    # break_market = None
-    # after_market = None
-    morning_open: 'time' = None
-    morning_close: 'time' = None
-    afternoon_open: 'time' = None
-    afternoon_close: 'time' = None
-
-    # Bar Type
-    default_freq: int = None
-    default_freqType: str = None
-    barType: int = None  # 240 or 241
-
-    # Bar Time Endpoint
-    first = None  # 第一个bar的结束时间
-    last = None  # 最后一个bar的结束时间
-    morning_start = None  # 早盘第一个bar的结束时间
-    morning_end = None  # 早盘最后一个bar的结束时间
-    afternoon_start = None  # 午盘第一个bar的结束时间
-    afternoon_end = None  # 午盘最后一个bar的结束时间
-    session: list = None  # 所有bar
+    # 是否允许逆运算
+    operation_inverse = False
 
     def __init__(self,
                  hour: int = None,
@@ -682,28 +821,26 @@ class time:
             self._hour = today.hour
             self._minute = today.minute
             self._second = today.second
+        if self.default_freqType in ('min', 'T') and not ignore:
+            self._second = 0
 
-        self._freq = freq if freq else self.default_freqType  # 如果没有设置频率，则使用默认频率
+        self._freq = freq if freq else self.default_freq  # 如果没有设置频率，则使用默认频率
         self._ignore = ignore
-        if not self._ignore and not self.validate():  # 默认进行检查
+        if not self._ignore and not self.validate(self._freq):  # 默认进行检查
             raise ValueError(f"{self} doesn't match freq {self._freq}")
-
-        if self.session is not None and not ignore:
-            if self not in self.session:
-                raise ValueError(f'{self} is not match freq')
 
     def __repr__(self):
         args = [
             "hour=%d" % self._hour,
             "minute=%d" % self._minute,
             "second=%d" % self._second,
-            "freq='%s'" % (str(self.default_freq) + self.default_freqType),
+            "freq='%s'" % self._freq,
             # "bar=%s" % self.session.index(self)  # 不可展示
         ]
         return "%s(%s)" % (self.__class__.__qualname__, ', '.join(args),)
 
     def __str__(self):
-        return "%s-%s-%s" % (str(self._hour).zfill(4),
+        return "%s:%s:%s" % (str(self._hour).zfill(2),
                              str(self._minute).zfill(2),
                              str(self._second).zfill(2)
                              )
@@ -730,45 +867,54 @@ class time:
             return 0
 
     @property
-    def freq(self) -> str:
+    def freq_n(self) -> int:
+        """5min -> 5"""
+        return int(re.sub(u"([^\u0030-\u0039])", "", self._freq))
+
+    @property
+    def freq_type(self) -> str:
+        """5min -> min"""
+        return re.sub(u"([^\u0041-\u007a])", "", self._freq)
+
+    @property
+    def freq(self):
+        """5min"""
         return self._freq
 
     @property
     def ignore(self) -> bool:
         return self._ignore
 
-    def index(self) -> int:
-        return self.session.index(self)
-
-    def validate(self) -> bool:
-        """time实例是否合法"""
-        return self in self.session
-
-    def start(self) -> 'time':
-        bar_gap = 1
-        if self.freqType in _freq_minute_type:
-            bar_gap *= self.freq
-        if self.freqType in _freq_hour_type:
-            bar_gap *= self.freq * 60
-
-        if self.index == 0:
-            return self.morning_open
+    def index(self, freq: str = None) -> int:
+        freq = freq if freq else self._freq
+        if self.validate(freq):
+            return self.session[freq].values.tolist().index(self)
         else:
-            s = (
-                    _datetime.datetime.combine(
-                        _datetime.date.today(),
-                        _datetime.time(self.hour, self.minute, self.second)
-                    )
-                    - _datetime.timedelta(minutes=bar_gap)
-                    + _datetime.timedelta(seconds=1)
-            ).time()
-            return time(s.hour, s.minute, s.second, ignore=True)
+            raise ValueError(f"{self} is not in freq '{freq}'")
 
-    def end(self) -> 'time':
-        return self
+    def validate(self, freq: str = None) -> bool:
+        """time实例是否合法"""
+        freq = freq if freq else self._freq
+        return self in self.session[freq].values
 
-    def range(self) -> Tuple['time', 'time']:
-        return self.start, self.end
+    def open(self, freq: str = None) -> 'time':
+        freq = freq if freq else self._freq
+        i = bisect.bisect_left(self.session[freq], self)
+        return self.session_open[freq].loc[i]
+
+    def close(self, freq: str = None) -> 'time':
+        freq = freq if freq else self.freq
+        i = bisect.bisect_left(self.session[freq], self)
+        return self.session_close[freq].loc[i]
+
+    def range(self, freq: str = None) -> Tuple['time', 'time']:
+        return self.open(freq), self.close(freq)
+
+    def py_time(self):
+        return _datetime.time(self.hour, self.minute, self.second)
+
+    def str(self):
+        return self.__str__()
 
     def __eq__(self, other):
         if isinstance(other, _datetime_type):
@@ -824,7 +970,7 @@ class time:
         if isinstance(other, int):
             other = bardelta(time_bars=other)
         if isinstance(other, bardelta):
-            return self.session[(self.session.index(self) + other.time_bars) % len(self.session)]
+            return self.session[self.freq].loc[(self.index(freq=self.freq) + other.time_bars) % len(self.session[self.freq])]
         elif isinstance(other, _datetime.timedelta):
             s = _datetime.datetime.combine(
                 _datetime.date.today(),
@@ -838,7 +984,7 @@ class time:
         if isinstance(other, int):
             other = bardelta(time_bars=other)
         if isinstance(other, bardelta):
-            return self.session[(self.session.index(self) - other.time_bars) % len(self.session)]
+            return self.session[self.freq].loc[(self.index(freq=self.freq) - other.time_bars) % len(self.session[self.freq])]
         elif isinstance(other, _datetime.timedelta):
             s = _datetime.datetime.combine(
                 _datetime.date.today(),
@@ -848,44 +994,60 @@ class time:
         else:
             return NotImplemented
 
+    # def __radd__(self, other):
+    #     if isinstance(other, (int, bardelta, _datetime.timedelta)):
+    #         return self + other
+    #     else:
+    #         return NotImplemented
+    #
+    # def __rsub__(self, other):
+    #     if isinstance(other, (int, bardelta, _datetime.timedelta)):
+    #         return self - other
+    #     else:
+    #         return NotImplemented
+
     def __radd__(self, other):
-        if isinstance(other, (int, bardelta, _datetime.timedelta)):
+        if self.operation_inverse:
             return self + other
         else:
-            return NotImplemented
+            raise NotImplementedError("Use: tradetime.time.operation_inverse = True")
 
     def __rsub__(self, other):
-        if isinstance(other, (int, bardelta, _datetime.timedelta)):
+        if self.operation_inverse:
             return self - other
         else:
-            return NotImplemented
+            raise NotImplementedError("Use: tradetime.time.operation_inverse = True")
 
     @classmethod
-    def bar(cls, n) -> 'time':
-        if n >= len(cls.session):
-            return cls.session[-1]
-        elif -n >= len(cls.session):
-            return cls.session[0]
+    def bars(cls, start_time, end_time, freq=None, is_open=False, overflow=False) -> pd.Series:
+        freq = freq if freq else cls.default_freq
+
+        start_time = start_time if isinstance(start_time, time) else _convert2time(start_time, freq)
+        end_time = end_time if isinstance(end_time, time) else _convert2time(end_time, freq)
+
+        start_id = start_time.close(freq).index(freq)
+        end_id = end_time.close(freq).index(freq)
+
+        if cls.session_close[freq].loc[end_id] > end_time and not overflow:  # 可能溢出
+            end_id -= 1
+
+        if not is_open:
+            return cls.session_close[freq].loc[start_id: end_id].reset_index(drop=True)
         else:
-            return cls.session[n]
+            return cls.session_open[freq].loc[start_id: end_id].reset_index(drop=True)
 
     @classmethod
-    def bars(cls, slicer) -> List['time']:
-        return cls.session[slice(*slicer)]
-
-    @classmethod
-    def count(cls) -> int:
-        return len(cls.session)
-
-    @classmethod
-    def current(cls) -> 'time':
+    def current(cls, freq=None, if_break=None) -> 'time':
+        freq = freq if freq else cls.default_freq
         now_dt = _datetime.datetime.now()
-        now = time(now_dt.hour, now_dt.minute, now_dt.second, ignore=True)
-        i = bisect.bisect_left(cls.session, now)
-        if i < cls.count():
-            return cls.session[i]
+        now_dt = _datetime.datetime(2022, 6, 13, 12)
+        now = time(now_dt.hour, now_dt.minute, now_dt.second, freq=freq, ignore=True)
+        i = bisect.bisect_left(cls.session[freq], now)
+        if cls.is_trading(now_dt) or if_break == 'future':
+            return cls.session_close[freq].loc[i]
         else:
-            return NotImplemented
+            assert if_break == 'past'
+            return cls.session_close[freq].loc[i - 1]
 
     @classmethod
     def future(cls, n=1) -> 'time':
@@ -904,65 +1066,64 @@ class time:
             return NotImplemented
 
     @classmethod
-    def is_before_market(cls, t=None) -> bool:
-        t = t if t else _datetime.datetime.now()
-        return t < cls.morning_open
-
-    @classmethod
     def is_trading(cls, t=None) -> bool:
-        t = t if t else _datetime.datetime.now()
-        return cls.morning_open <= t <= cls.morning_close or cls.afternoon_open <= t <= cls.afternoon_close
+        if t is None:  # 没有传入时间，则默认现在
+            t = _datetime.datetime.now()
+        if isinstance(t, _anydatetime_type):
+            t = _convert2time(t)
+        assert isinstance(t, time), f'Error Type {t.__class__}'
+        return any([
+            Session.morning_open_time <= t.py_time() <= Session.morning_close_time,
+            Session.afternoon_open_time <= t.py_time() <= Session.afternoon_close_time
+        ])
 
     @classmethod
     def is_break(cls, t=None) -> bool:
-        t = t if t else _datetime.datetime.now()
-        return cls.morning_close < t < cls.afternoon_open
+        return not cls.is_trading(t)
 
     @classmethod
-    def is_after_market(cls, t=None) -> bool:
-        t = t if t else _datetime.datetime.now()
-        return cls.afternoon_close < t
+    def break_type(cls, t=None) -> str:
+        if cls.is_break(t):
+            if t is None:  # 没有传入时间，则默认现在
+                t = _datetime.datetime.now()
+            if isinstance(t, _anydatetime_type):
+                t = _convert2time(t)
+            assert isinstance(t, time)
+            if t < Session.morning_open_time or t.py_time() > Session.afternoon_close_time:
+                return 'external break'
+            if Session.morning_close_time < t.py_time() < Session.afternoon_open_time:
+                return 'internal break'
 
     @classmethod
-    def set_option(cls, bars=241, freq='1min'):
+    def set_option(cls, default_freq='1min', include=True):
 
-        _check_time_bars(bars)
-        _check_time_freq(freq)
+        _check_time_freq(default_freq)
+        cls.default_freq = default_freq
+        cls.default_freqN = int(re.sub(u"([^\u0030-\u0039])", "", default_freq))
+        cls.default_freqType = re.sub(u"([^\u0041-\u007a])", "", default_freq)
 
-        morning_open_time = cls(hour=9, minute=30, ignore=True)
-        morning_close_time = cls(hour=11, minute=30, ignore=True)
-        afternoon_open_time = cls(hour=13, ignore=True)
-        afternoon_close_time = cls(hour=15, ignore=True)
+        Session.include = include
 
-        if freq == '1min':
-            if bars == 240:
-                morning_session = time_range(start=morning_open_time + _datetime.timedelta(minutes=1),
-                                             end=morning_close_time, freq=freq)
-            else:  # bars == 241
-                morning_session = time_range(start=morning_open_time, end=morning_close_time, freq=freq)
-            afternoon_session = time_range(start=afternoon_open_time + _datetime.timedelta(minutes=1),
-                                           end=afternoon_close_time, freq=freq)
-        else:  # other freq type
-            morning_session = time_range(start=morning_open_time, end=morning_close_time, freq=freq)
-            afternoon_session = time_range(start=afternoon_open_time, end=afternoon_close_time, freq=freq)
-        session = morning_session + afternoon_session
+        # cls._1s = Session('1s')
+        cls._1m = Session('1min')
+        cls._5m = Session('5min')
+        cls._15m = Session('15min')
+        cls._30m = Session('30min')
+        cls._1h = Session('1H')
 
-        # Trading Endpoint
-        cls.morning_open = morning_open_time
-        cls.morning_close = morning_close_time
-        cls.afternoon_open = afternoon_open_time
-        cls.afternoon_close = afternoon_close_time
-        # Bar EndPoint
-        cls.first = session[0]
-        cls.last = session[-1]
-        cls.morning_start = morning_session[0]
-        cls.morning_end = morning_session[-1]
-        cls.afternoon_start = afternoon_session[0]
-        cls.afternoon_end = afternoon_session[-1]
-        cls.session = session
-        cls.default_freq = int(re.sub(u"([^\u0030-\u0039])", "", freq))
-        cls.default_freqType = re.sub(u"([^\u0041-\u007a])", "", freq)
-        cls.barType = bars
+        # All Session Dict
+        freq_list = [
+            # '1s',
+            '1min', '5min', '15min', '30min', '1H']
+        cls.session_open = dict(
+            zip(freq_list, [
+                # cls._1s.open,
+                cls._1m.open, cls._5m.open, cls._15m.open, cls._30m.open, cls._1h.open]))
+        cls.session_close = dict(
+            zip(freq_list, [
+                # cls._1s.close,
+                cls._1m.close, cls._5m.close, cls._15m.close, cls._30m.close, cls._1h.close]))
+        cls.session = cls.session_close
 
 
 class datetime(date):
@@ -970,14 +1131,7 @@ class datetime(date):
 
 
 # Other Functions
-def time_range(start: time, end: time, freq='1min'):
-    start = _datetime.datetime.combine(_datetime.date.today(), _datetime.time(hour=start.hour, minute=start.minute))
-    end = _datetime.datetime.combine(_datetime.date.today(), _datetime.time(hour=end.hour, minute=end.minute))
-    time_ranges = [time(i.time().hour, i.time().minute, i.time().second, ignore=True) for i in
-                   pd.date_range(start, end, freq=freq)]
-    if freq != '1min':
-        time_ranges = time_ranges[1:]
-    return time_ranges
+...
 
 
 # Settings
@@ -985,12 +1139,15 @@ def set_date(default_freq: str = 'D'):
     date.set_option(default_freq)
 
 
-def set_time(bars=241, freq='1min'):
-    time.set_option(bars, freq)
+def set_time(default_freq: str = '1min', include=True):
+    """默认为241分钟的一分钟bar"""
+    time.set_option(default_freq, include)
 
 
 def set_operation_inverse(inverse=False):
+    """是否允许逆向运算，默认不可以"""
     date.operation_inverse = inverse
+    time.operation_inverse = inverse
 
 
 # Update
@@ -1006,58 +1163,3 @@ def update():
 set_date()
 set_time()
 set_operation_inverse()
-
-
-# def set_date(freq='D'):
-#     # Load Trade Date Calendar, can fetch from other api
-#     calendar: pd.Series = pd.read_pickle('data.pkl')
-#     calendar.index = pd.to_datetime(calendar)
-#
-#     calendar_open = calendar.resample(freq).first().dropna().reset_index(drop=True)
-#     calendar_close = calendar.resample(freq).last().dropna().reset_index(drop=True)
-#     calendar_open = calendar_open.apply(lambda x: date(x.year, x.month, x.day, ignore=True))
-#     calendar_close = calendar_close.apply(lambda x: date(x.year, x.month, x.day, ignore=True))
-#
-#     date.freq = 1
-#     date.freqType = freq
-#     date.calendar_open = calendar_open
-#     date.calendar_close = calendar_close
-#     date.calendar = calendar_close
-
-# def set_time(bars=241, freq='1min'):
-#     _check_time_bars(bars)
-#     _check_time_freq(freq)
-#
-#     morning_open_time = time(hour=9, minute=30, ignore=True)
-#     morning_close_time = time(hour=11, minute=30, ignore=True)
-#     afternoon_open_time = time(hour=13, ignore=True)
-#     afternoon_close_time = time(hour=15, ignore=True)
-#     if freq == '1min':
-#         if bars == 240:
-#             morning_session = time_range(open=morning_open_time + _datetime.timedelta(minutes=1),
-#                                          close=morning_close_time, freq=freq)
-#         else:  # bars == 241
-#             morning_session = time_range(open=morning_open_time, close=morning_close_time, freq=freq)
-#         afternoon_session = time_range(open=afternoon_open_time + _datetime.timedelta(minutes=1),
-#                                        close=afternoon_close_time, freq=freq)
-#     else:  # other freq type
-#         morning_session = time_range(open=morning_open_time, close=morning_close_time, freq=freq)
-#         afternoon_session = time_range(open=afternoon_open_time, close=afternoon_close_time, freq=freq)
-#     session = morning_session + afternoon_session
-#
-#     # Trading Endpoint
-#     time.morning_open = morning_open_time
-#     time.morning_close = morning_close_time
-#     time.afternoon_open = afternoon_open_time
-#     time.afternoon_close = afternoon_close_time
-#     # Bar EndPoint
-#     time.first = session[0]
-#     time.last = session[-1]
-#     time.morning_start = morning_session[0]
-#     time.morning_end = morning_session[-1]
-#     time.afternoon_start = afternoon_session[0]
-#     time.afternoon_end = afternoon_session[-1]
-#     time.session = session
-#     time.freq = int(re.sub(u"([^\u0030-\u0039])", "", freq))
-#     time.freqType = re.sub(u"([^\u0041-\u007a])", "", freq)
-#     time.barType = bars
